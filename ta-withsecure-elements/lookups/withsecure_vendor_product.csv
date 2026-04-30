@@ -1,0 +1,4 @@
+sourcetype,vendor_product
+withsecure:epp:security_event,WithSecure Elements
+withsecure:epp:bcd_incident,WithSecure Elements XDR
+withsecure:epp:bcd_detection,WithSecure Elements XDR

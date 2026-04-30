@@ -1,0 +1,56 @@
+{
+  "schemaVersion": "2.0.0",
+  "info": {
+    "title": "WithSecure Elements Add-on for Splunk",
+    "id": {
+      "group": null,
+      "name": "ta-withsecure-elements",
+      "version": "1.0.0"
+    },
+    "author": [
+      {
+        "name": "WithSecure",
+        "email": "support@withsecure.com",
+        "company": "WithSecure"
+      }
+    ],
+    "releaseDate": "2026-04-30",
+    "description": "Collects EPP Security Events and EDR Broad Context Detections from the WithSecure Elements API.",
+    "classification": {
+      "intendedAudience": "IT Security",
+      "categories": ["Security, Fraud & Compliance"],
+      "developmentStatus": "production"
+    },
+    "commonInformationModels": {
+      "Endpoint": null,
+      "Malware": null,
+      "Intrusion_Detection": null
+    },
+    "license": {
+      "name": "Apache-2.0",
+      "text": "LICENSE",
+      "uri": "https://www.apache.org/licenses/LICENSE-2.0"
+    },
+    "privacyPolicy": {
+      "name": null,
+      "text": null,
+      "uri": null
+    },
+    "releaseNotes": {
+      "name": null,
+      "text": null,
+      "uri": null
+    }
+  },
+  "dependencies": {},
+  "tasks": [],
+  "inputGroups": {},
+  "incompatibleApps": {},
+  "platformRequirements": {
+    "splunk": {
+      "Enterprise": ">=8.0"
+    }
+  },
+  "supportedDeployments": ["*"],
+  "targetWorkloads": ["*"]
+}

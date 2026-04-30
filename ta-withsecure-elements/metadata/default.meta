@@ -1,0 +1,21 @@
+[]
+access = read : [ * ], write : [ admin ]
+export = system
+
+[inputs]
+access = read : [ * ], write : [ admin ]
+
+[transforms]
+access = read : [ * ], write : [ admin ]
+
+[props]
+access = read : [ * ], write : [ admin ]
+
+[tags]
+access = read : [ * ], write : [ admin ]
+
+[workflow_actions]
+access = read : [ * ], write : [ admin ]
+
+[collections/checkpoints]
+access = read : [ admin, power ], write : [ admin, power ]
