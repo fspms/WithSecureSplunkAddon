@@ -31,14 +31,10 @@ A Splunk Technology Add-on (TA) that ingests security telemetry from the **WithS
 
 ## Installation
 
-1. Download or clone this repository
-2. Copy the `ta-withsecure-elements/` folder into `$SPLUNK_HOME/etc/apps/`
-3. Restart Splunk
-
-```bash
-cp -r ta-withsecure-elements/ $SPLUNK_HOME/etc/apps/
-$SPLUNK_HOME/bin/splunk restart
-```
+1. Download the latest `.spl` file from the [Releases](https://github.com/fspms/WithSecureSplunkAddon/releases) page
+2. In Splunk, go to **Apps → Manage Apps → Install app from file**
+3. Select the downloaded `.spl` file and click **Upload**
+4. Restart Splunk if prompted
 
 ---
 
