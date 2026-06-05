@@ -1,6 +1,6 @@
-# WithSecure Elements Add-on for Splunk
+# WithSecure Elements Add-on
 
-A Splunk Technology Add-on (TA) that ingests security telemetry from the **WithSecure Elements** platform into Splunk — including EPP security events and Broad Context Detection (BCD) incidents and detections.
+A Technology Add-on (TA) for use with Splunk® Enterprise that ingests security telemetry from the **WithSecure Elements** platform — including EPP security events and Broad Context Detection (BCD) incidents and detections.
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Splunk](https://img.shields.io/badge/Splunk-%3E%3D8.0-green.svg)](https://www.splunk.com)

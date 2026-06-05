@@ -1,7 +1,7 @@
 {
   "schemaVersion": "2.0.0",
   "info": {
-    "title": "WithSecure Elements Add-on for Splunk",
+    "title": "WithSecure Elements Add-on",
     "id": {
       "group": null,
       "name": "ta-withsecure-elements",
