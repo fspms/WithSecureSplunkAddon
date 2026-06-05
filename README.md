@@ -172,6 +172,15 @@ Checkpoints are stored in the Splunk KV Store (`checkpoints` collection) and adv
 
 ---
 
+## Support
+
+This is a community-maintained open source project. For questions, issues, or feature requests:
+
+- **GitHub Issues**: [Open a new issue](https://github.com/fspms/WithSecureSplunkAddon/issues)
+- **Source code**: [github.com/fspms/WithSecureSplunkAddon](https://github.com/fspms/WithSecureSplunkAddon)
+
+For WithSecure Elements API questions, contact WithSecure directly via the [Elements portal](https://elements.withsecure.com).
+
 ## License
 
 This project is licensed under the **Apache License 2.0** — see [LICENSE](ta-withsecure-elements/LICENSE) for details.
