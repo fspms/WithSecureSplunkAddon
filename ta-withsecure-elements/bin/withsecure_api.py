@@ -112,7 +112,7 @@ class WithSecureClient:
         resp.raise_for_status()
         data = resp.json()
         self._token = data["access_token"]
-        expires_in = int(data.get("expires_in", 3600))
+        expires_in = int(data["expires_in"]) if "expires_in" in data else 3600
         self._token_expires_at = time.time() + expires_in
         logger.debug("Token acquired, expires in %s seconds", expires_in)
         return self._token  # type: ignore[return-value]
@@ -138,7 +138,10 @@ class WithSecureClient:
             resp = self._session.request(method, url, **kwargs)
 
             if resp.status_code == 429:
-                retry_after = float(resp.headers.get("Retry-After", _RETRY_BACKOFF * attempt))
+                if "Retry-After" in resp.headers:
+                    retry_after = float(resp.headers["Retry-After"])
+                else:
+                    retry_after = _RETRY_BACKOFF * attempt
                 logger.warning(
                     "Rate limited by WithSecure API; waiting %.1f seconds (attempt %d/%d)",
                     retry_after,
@@ -189,8 +192,8 @@ class WithSecureClient:
 
         resp = self._request("get", _EPP_EVENTS_ENDPOINT, params=params)
         data = resp.json()
-        events: List[Dict[str, Any]] = data.get("items", [])
-        next_anchor: Optional[str] = data.get("nextAnchor")
+        events: List[Dict[str, Any]] = data["items"] if "items" in data else []
+        next_anchor: Optional[str] = data["nextAnchor"] if "nextAnchor" in data else None
         logger.info(
             "Fetched %d EPP security events (nextAnchor=%s)",
             len(events),
@@ -232,8 +235,8 @@ class WithSecureClient:
 
         resp = self._request("get", _BCD_INCIDENTS_ENDPOINT, params=params)
         data = resp.json()
-        incidents: List[Dict[str, Any]] = data.get("items", [])
-        next_anchor: Optional[str] = data.get("nextAnchor")
+        incidents: List[Dict[str, Any]] = data["items"] if "items" in data else []
+        next_anchor: Optional[str] = data["nextAnchor"] if "nextAnchor" in data else None
         logger.info(
             "Fetched %d BCD incidents (nextAnchor=%s)",
             len(incidents),
@@ -261,7 +264,7 @@ class WithSecureClient:
         }
         resp = self._request("get", _BCD_DETECTIONS_ENDPOINT, params=params)
         data = resp.json()
-        detections: List[Dict[str, Any]] = data.get("items", [])
+        detections: List[Dict[str, Any]] = data["items"] if "items" in data else []
         logger.info(
             "Fetched %d detections for incident %s", len(detections), incident_id
         )
