@@ -12,19 +12,25 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
-"""Python library for Splunk."""
+import sys
 
-import logging
+if sys.version_info < (3, 13):
+    raise ImportError("Python 3.13 or newer is required to use this module")
 
-DEFAULT_LOG_FORMAT = (
-    "%(asctime)s, Level=%(levelname)s, Pid=%(process)s, Logger=%(name)s, File=%(filename)s, "
-    "Line=%(lineno)s, %(message)s"
+from splunklib.ai.agent import Agent
+from splunklib.ai.model import AnthropicModel, GoogleModel, OpenAIModel
+from splunklib.ai.security import (
+    create_structured_prompt,
+    detect_injection,
+    truncate_input,
 )
-DEFAULT_DATE_FORMAT = "%Y-%m-%d %H:%M:%S %Z"
 
-
-# To set the logging level of splunklib
-# ex. To enable debug logs, call this method with parameter 'logging.DEBUG'
-# default logging level is set to 'WARNING'
-def setup_logging(level, log_format=DEFAULT_LOG_FORMAT, date_format=DEFAULT_DATE_FORMAT):
-    logging.basicConfig(level=level, format=log_format, datefmt=date_format)
+__all__ = [
+    "Agent",
+    "AnthropicModel",
+    "OpenAIModel",
+    "GoogleModel",
+    "create_structured_prompt",
+    "detect_injection",
+    "truncate_input",
+]

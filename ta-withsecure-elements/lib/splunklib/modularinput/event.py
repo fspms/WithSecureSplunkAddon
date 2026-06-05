@@ -1,4 +1,4 @@
-# Copyright © 2011-2024 Splunk, Inc.
+# Copyright © 2011-2026 Splunk, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License"): you may
 # not use this file except in compliance with the License. You may obtain
@@ -12,10 +12,10 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
-from io import TextIOBase
 import xml.etree.ElementTree as ET
+from io import TextIOBase
 
-from splunklib.utils import ensure_str
+from ..utils import ensure_str
 
 
 class Event:
@@ -23,8 +23,19 @@ class Event:
 
     To write an input to a stream, call the ``write_to`` function, passing in a stream.
     """
-    def __init__(self, data=None, stanza=None, time=None, host=None, index=None, source=None,
-                 sourcetype=None, done=True, unbroken=True):
+
+    def __init__(
+        self,
+        data=None,
+        stanza=None,
+        time=None,
+        host=None,
+        index=None,
+        source=None,
+        sourcetype=None,
+        done=True,
+        unbroken=True,
+    ):
         """There are no required parameters for constructing an Event
 
         **Example with minimal configuration**::
@@ -32,7 +43,7 @@ class Event:
             my_event = Event(
                 data="This is a test of my new event.",
                 stanza="myStanzaName",
-                time="%.3f" % 1372187084.000
+                time="%.3f" % 1372187084.000,
             )
 
         **Example with full configuration**::
@@ -46,7 +57,7 @@ class Event:
                 source="Splunk",
                 sourcetype="misc",
                 done=True,
-                unbroken=True
+                unbroken=True,
             )
 
         :param data: ``string``, the event's text.
@@ -95,7 +106,7 @@ class Event:
             ("sourcetype", self.sourceType),
             ("index", self.index),
             ("host", self.host),
-            ("data", self.data)
+            ("data", self.data),
         ]
         for node, value in subelements:
             if value is not None:

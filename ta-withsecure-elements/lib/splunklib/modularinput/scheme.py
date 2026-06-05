@@ -1,4 +1,4 @@
-# Copyright © 2011-2024 Splunk, Inc.
+# Copyright © 2011-2026 Splunk, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License"): you may
 # not use this file except in compliance with the License. You may obtain
@@ -66,7 +66,7 @@ class Scheme:
         subelements = [
             ("use_external_validation", self.use_external_validation),
             ("use_single_instance", self.use_single_instance),
-            ("streaming_mode", self.streaming_mode)
+            ("streaming_mode", self.streaming_mode),
         ]
         for name, value in subelements:
             ET.SubElement(root, name).text = str(value).lower()

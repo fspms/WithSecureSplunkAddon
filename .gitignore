@@ -37,3 +37,6 @@ htmlcov/
 *.tar.gz
 *.spl
 output/
+
+# Copied from repo root during .spl build (kept out of git to avoid duplication)
+ta-withsecure-elements/LICENSE

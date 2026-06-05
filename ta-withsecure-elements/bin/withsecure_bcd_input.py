@@ -155,6 +155,7 @@ class BCDInput(smi.Script):
 
         total = 0
         newest_ts = last_ts
+        oldest_failed_ts: Optional[str] = None
         next_anchor: Optional[str] = None
 
         while True:
@@ -184,20 +185,36 @@ class BCDInput(smi.Script):
                 if auto_fetch:
                     incident_id = incident.get("incidentId")
                     if incident_id:
-                        self._fetch_and_index_detections(
+                        success = self._fetch_and_index_detections(
                             api, incident_id, index, input_name, ew
                         )
+                        if not success and incident_ts and (
+                            oldest_failed_ts is None or incident_ts < oldest_failed_ts
+                        ):
+                            oldest_failed_ts = incident_ts
 
             if not next_anchor:
                 break
 
         if total:
-            self._set_checkpoint(service, checkpoint_key, _advance_ts(newest_ts))
+            if oldest_failed_ts:
+                # Cap the checkpoint to the oldest failed incident's timestamp so the
+                # next poll re-fetches it (re-fetch may duplicate newer incidents that
+                # already succeeded, but no detections are lost).
+                checkpoint_value = oldest_failed_ts
+                logger.warning(
+                    "Detection fetch failed for one or more incidents; "
+                    "capping checkpoint at %s to retry on next poll",
+                    oldest_failed_ts,
+                )
+            else:
+                checkpoint_value = _advance_ts(newest_ts)
+            self._set_checkpoint(service, checkpoint_key, checkpoint_value)
             logger.info(
-                "Indexed %d BCD incidents for org %s; checkpoint advanced to %s",
+                "Indexed %d BCD incidents for org %s; checkpoint set to %s",
                 total,
                 org_id,
-                newest_ts,
+                checkpoint_value,
             )
 
     # ------------------------------------------------------------------
@@ -211,14 +228,15 @@ class BCDInput(smi.Script):
         index: str,
         source: str,
         ew: smi.EventWriter,
-    ) -> None:
+    ) -> bool:
+        """Return True on success, False if the API call failed."""
         try:
             detections = api.get_incident_detections(incident_id)
         except WithSecureAPIError as exc:
             logger.error(
                 "Failed to fetch detections for incident %s: %s", incident_id, exc
             )
-            return
+            return False
 
         for detection in detections:
             detection["incident_id"] = incident_id
@@ -234,6 +252,7 @@ class BCDInput(smi.Script):
         logger.info(
             "Indexed %d detections for incident %s", len(detections), incident_id
         )
+        return True
 
     # ------------------------------------------------------------------
     # KV Store helpers

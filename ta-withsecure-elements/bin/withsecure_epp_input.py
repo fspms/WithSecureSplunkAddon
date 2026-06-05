@@ -11,7 +11,6 @@ import json
 import logging
 import os
 import sys
-import time
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -106,32 +105,41 @@ class EPPInput(smi.Script):
         api = WithSecureClient(client_id, client_secret, org_id)
 
         now_ts = _utc_iso(datetime.now(timezone.utc))
-        try:
-            events = api.get_epp_events(last_ts, now_ts)
-        except WithSecureAPIError as exc:
-            logger.error("Failed to fetch EPP events: %s", exc)
-            return
-
         newest_ts = last_ts
-        for event in events:
-            raw = json.dumps(event)
-            ev = smi.Event(
-                data=raw,
-                sourcetype=_SOURCETYPE,
-                index=index,
-                source="withsecure_elements_security_events",
-            )
-            # Use the event's own persistence timestamp if available
-            event_ts = event.get("persistenceTimestamp")
-            if event_ts and event_ts > newest_ts:
-                newest_ts = event_ts
-            ew.write_event(ev)
+        total = 0
+        next_anchor: Optional[str] = None
 
-        if events:
+        while True:
+            try:
+                events, next_anchor = api.get_epp_events(
+                    last_ts, now_ts, exclusive_start=next_anchor
+                )
+            except WithSecureAPIError as exc:
+                logger.error("Failed to fetch EPP events: %s", exc)
+                break
+
+            for event in events:
+                raw = json.dumps(event)
+                ev = smi.Event(
+                    data=raw,
+                    sourcetype=_SOURCETYPE,
+                    index=index,
+                    source="withsecure_elements_security_events",
+                )
+                event_ts = event.get("persistenceTimestamp")
+                if event_ts and event_ts > newest_ts:
+                    newest_ts = event_ts
+                ew.write_event(ev)
+                total += 1
+
+            if not next_anchor:
+                break
+
+        if total:
             self._set_checkpoint(service, checkpoint_key, _advance_ts(newest_ts))
             logger.info(
                 "Indexed %d EPP events for org %s; checkpoint advanced to %s",
-                len(events),
+                total,
                 org_id,
                 newest_ts,
             )

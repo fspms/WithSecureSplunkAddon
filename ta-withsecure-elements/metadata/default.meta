@@ -1,21 +1,21 @@
 []
-access = read : [ * ], write : [ admin ]
+access = read : [ * ], write : [ admin, sc_admin ]
 export = system
 
 [inputs]
-access = read : [ * ], write : [ admin ]
+access = read : [ * ], write : [ admin, sc_admin ]
 
 [transforms]
-access = read : [ * ], write : [ admin ]
+access = read : [ * ], write : [ admin, sc_admin ]
 
 [props]
-access = read : [ * ], write : [ admin ]
+access = read : [ * ], write : [ admin, sc_admin ]
 
 [tags]
-access = read : [ * ], write : [ admin ]
+access = read : [ * ], write : [ admin, sc_admin ]
 
 [workflow_actions]
-access = read : [ * ], write : [ admin ]
+access = read : [ * ], write : [ admin, sc_admin ]
 
 [collections/checkpoints]
-access = read : [ admin, power ], write : [ admin, power ]
+access = read : [ admin, sc_admin, power ], write : [ admin, sc_admin, power ]

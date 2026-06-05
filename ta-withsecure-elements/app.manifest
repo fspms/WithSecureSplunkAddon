@@ -28,7 +28,7 @@
     },
     "license": {
       "name": "Apache-2.0",
-      "text": "LICENSE",
+      "text": null,
       "uri": "https://www.apache.org/licenses/LICENSE-2.0"
     },
     "privacyPolicy": {

@@ -1,4 +1,4 @@
-# Copyright © 2011-2024 Splunk, Inc.
+# Copyright © 2011-2026 Splunk, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License"): you may
 # not use this file except in compliance with the License. You may obtain
@@ -14,8 +14,8 @@
 
 import xml.etree.ElementTree as ET
 
-class Argument:
 
+class Argument:
     """Class representing an argument to a modular input kind.
 
     ``Argument`` is meant to be used with ``Scheme`` to generate an XML
@@ -35,7 +35,7 @@ class Argument:
                 validation="is_pos_int('some_name')",
                 data_type=Argument.data_type_number,
                 required_on_edit=True,
-                required_on_create=True
+                required_on_create=True,
             )
     """
 
@@ -45,8 +45,16 @@ class Argument:
     data_type_number = "NUMBER"
     data_type_string = "STRING"
 
-    def __init__(self, name, description=None, validation=None,
-                 data_type=data_type_string, required_on_edit=False, required_on_create=False, title=None):
+    def __init__(
+        self,
+        name,
+        description=None,
+        validation=None,
+        data_type=data_type_string,
+        required_on_edit=False,
+        required_on_create=False,
+        title=None,
+    ):
         """
         :param name: ``string``, identifier for this argument in Splunk.
         :param description: ``string``, human-readable description of the argument.
@@ -91,7 +99,7 @@ class Argument:
         subelements = [
             ("data_type", self.data_type),
             ("required_on_edit", self.required_on_edit),
-            ("required_on_create", self.required_on_create)
+            ("required_on_create", self.required_on_create),
         ]
 
         for name, value in subelements:

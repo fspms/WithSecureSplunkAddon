@@ -12,19 +12,13 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
-"""Python library for Splunk."""
-
-import logging
-
-DEFAULT_LOG_FORMAT = (
-    "%(asctime)s, Level=%(levelname)s, Pid=%(process)s, Logger=%(name)s, File=%(filename)s, "
-    "Line=%(lineno)s, %(message)s"
-)
-DEFAULT_DATE_FORMAT = "%Y-%m-%d %H:%M:%S %Z"
+from splunklib.ai.core.backend import Backend
 
 
-# To set the logging level of splunklib
-# ex. To enable debug logs, call this method with parameter 'logging.DEBUG'
-# default logging level is set to 'WARNING'
-def setup_logging(level, log_format=DEFAULT_LOG_FORMAT, date_format=DEFAULT_DATE_FORMAT):
-    logging.basicConfig(level=level, format=log_format, datefmt=date_format)
+def get_backend() -> Backend:
+    """Get a backend instance."""
+    # Lazy import to avoid circular dependency hell between LangChain and SDK
+    from splunklib.ai.engines.langchain import langchain_backend_factory
+
+    # NOTE: For now we're just using the langchain backend implementation
+    return langchain_backend_factory()

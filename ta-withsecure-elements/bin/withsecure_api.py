@@ -163,16 +163,20 @@ class WithSecureClient:
         self,
         timestamp_start: str,
         timestamp_end: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
+        exclusive_start: Optional[str] = None,
+    ) -> Tuple[List[Dict[str, Any]], Optional[str]]:
         """
         Fetch EPP security events via GET /security-events/v1/security-events.
+
+        Handles pagination via the nextAnchor cursor.
 
         Args:
             timestamp_start: ISO-8601 UTC timestamp (inclusive lower bound).
             timestamp_end: ISO-8601 UTC timestamp (exclusive upper bound). Defaults to now.
+            exclusive_start: Pagination cursor (nextAnchor from previous response).
 
         Returns:
-            List of security event dicts.
+            Tuple of (list of security event dicts, nextAnchor or None).
         """
         params: Dict[str, Any] = {
             "organizationId": self._org_id,
@@ -180,12 +184,19 @@ class WithSecureClient:
         }
         if timestamp_end:
             params["persistenceTimestampEnd"] = timestamp_end
+        if exclusive_start:
+            params["exclusiveStart"] = exclusive_start
 
         resp = self._request("get", _EPP_EVENTS_ENDPOINT, params=params)
         data = resp.json()
         events: List[Dict[str, Any]] = data.get("items", [])
-        logger.info("Fetched %d EPP security events", len(events))
-        return events
+        next_anchor: Optional[str] = data.get("nextAnchor")
+        logger.info(
+            "Fetched %d EPP security events (nextAnchor=%s)",
+            len(events),
+            "yes" if next_anchor else "none",
+        )
+        return events, next_anchor
 
     # ------------------------------------------------------------------
     # BCD Incidents

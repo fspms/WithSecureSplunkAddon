@@ -1,4 +1,4 @@
-# Copyright © 2011-2024 Splunk, Inc.
+# Copyright © 2011-2026 Splunk, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License"): you may
 # not use this file except in compliance with the License. You may obtain
@@ -15,7 +15,7 @@
 import sys
 import traceback
 
-from splunklib.utils import ensure_str
+from ..utils import ensure_str
 from .event import ET
 
 
@@ -33,7 +33,7 @@ class EventWriter:
     ERROR = "ERROR"
     FATAL = "FATAL"
 
-    def __init__(self, output = sys.stdout, error = sys.stderr):
+    def __init__(self, output=sys.stdout, error=sys.stderr):
         """
         :param output: Where to write the output; defaults to sys.stdout.
         :param error: Where to write any errors; defaults to sys.stderr.
