@@ -2,6 +2,7 @@
 
 A Technology Add-on (TA) for use with Splunk® Enterprise that ingests security telemetry from the **WithSecure Elements** platform — including EPP security events and Broad Context Detection (BCD) incidents and detections.
 
+[![Splunkbase](https://img.shields.io/badge/Splunkbase-Install-65A637.svg)](https://splunkbase.splunk.com/app/8820)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Splunk](https://img.shields.io/badge/Splunk-%3E%3D9.0-green.svg)](https://www.splunk.com)
 [![Python](https://img.shields.io/badge/Python-3.x-blue.svg)](https://www.python.org)
@@ -31,9 +32,17 @@ A Technology Add-on (TA) for use with Splunk® Enterprise that ingests security 
 
 ## Installation
 
-1. Download the latest `.spl` file from the [Releases](https://github.com/fspms/WithSecureSplunkAddon/releases) page
+**Recommended — from Splunkbase:**
+
+1. In Splunk, go to **Apps → Find More Apps**
+2. Search for `WithSecure Elements`, or install directly from [splunkbase.splunk.com/app/8820](https://splunkbase.splunk.com/app/8820)
+3. Restart Splunk if prompted
+
+**Alternative — from a GitHub release:**
+
+1. Download the latest `.spl` from the [Releases](https://github.com/fspms/WithSecureSplunkAddon/releases) page
 2. In Splunk, go to **Apps → Manage Apps → Install app from file**
-3. Select the downloaded `.spl` file and click **Upload**
+3. Select the downloaded `.spl` and click **Upload**
 4. Restart Splunk if prompted
 
 ---
