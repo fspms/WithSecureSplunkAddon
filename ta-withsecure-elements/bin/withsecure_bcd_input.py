@@ -24,14 +24,20 @@ sys.path.insert(0, os.path.join(os.path.dirname(_bin), "lib"))
 import splunklib.client as client
 import splunklib.modularinput as smi
 
-from withsecure_api import WithSecureClient, WithSecureAPIError, flatten_detection
+from withsecure_api import (
+    WithSecureClient,
+    WithSecureAPIError,
+    flatten_detection,
+    utc_iso as _utc_iso,
+    advance_ts as _advance_ts,
+)
 
 logger = logging.getLogger("ta-withsecure-elements")
 
 _CHECKPOINT_COLLECTION = "checkpoints"
 _SOURCETYPE_INCIDENT = "withsecure:epp:bcd_incident"
 _SOURCETYPE_DETECTION = "withsecure:epp:bcd_detection"
-_VALID_RISK_LEVELS = {"low", "medium", "high", "critical"}
+_VALID_RISK_LEVELS = {"info", "low", "medium", "high", "severe"}
 
 
 class BCDInput(smi.Script):
@@ -40,7 +46,11 @@ class BCDInput(smi.Script):
     def get_scheme(self) -> smi.Scheme:
         scheme = smi.Scheme("WithSecure Elements BCD Incidents")
         scheme.description = (
-            "Polls the WithSecure Elements API for Broad Context Detection incidents."
+            "Polls the WithSecure Elements API for Broad Context Detection incidents. "
+            "One Splunk event is indexed per server-side update of an incident "
+            "(new detection attached, status change, etc.), so the same incidentId "
+            "may appear multiple times. Use '| dedup incidentId sortby -_time' "
+            "to query current state."
         )
         scheme.use_external_validation = True
         scheme.use_single_instance = False
@@ -77,7 +87,7 @@ class BCDInput(smi.Script):
                 "risk_level_filter",
                 title="Risk Level Filter",
                 description=(
-                    "Comma-separated risk levels to collect: low,medium,high,critical. "
+                    "Comma-separated risk levels to collect: info,low,medium,high,severe. "
                     "Leave blank for all."
                 ),
                 data_type=smi.Argument.data_type_string,
@@ -157,13 +167,14 @@ class BCDInput(smi.Script):
         newest_ts = last_ts
         oldest_failed_ts: Optional[str] = None
         next_anchor: Optional[str] = None
+        seen_anchors: set = set()
 
         while True:
             try:
                 incidents, next_anchor = api.get_bcd_incidents(
                     last_ts,
                     risk_levels=risk_levels,
-                    exclusive_start=next_anchor,
+                    anchor=next_anchor,
                 )
             except WithSecureAPIError as exc:
                 logger.error("Failed to fetch BCD incidents: %s", exc)
@@ -186,7 +197,7 @@ class BCDInput(smi.Script):
                     incident_id = incident.get("incidentId")
                     if incident_id:
                         success = self._fetch_and_index_detections(
-                            api, incident_id, index, input_name, ew
+                            api, service, incident_id, index, input_name, ew
                         )
                         if not success and incident_ts and (
                             oldest_failed_ts is None or incident_ts < oldest_failed_ts
@@ -195,6 +206,15 @@ class BCDInput(smi.Script):
 
             if not next_anchor:
                 break
+            # Defensive: detect API misbehavior returning the same cursor twice.
+            if next_anchor in seen_anchors:
+                logger.warning(
+                    "BCD pagination loop detected (repeated nextAnchor); "
+                    "aborting after %d incidents",
+                    total,
+                )
+                break
+            seen_anchors.add(next_anchor)
 
         if total:
             if oldest_failed_ts:
@@ -224,20 +244,35 @@ class BCDInput(smi.Script):
     def _fetch_and_index_detections(
         self,
         api: WithSecureClient,
+        service: client.Service,
         incident_id: str,
         index: str,
         source: str,
         ew: smi.EventWriter,
     ) -> bool:
-        """Return True on success, False if the API call failed."""
+        """Fetch detections for an incident and index only the new ones.
+
+        A per-incident checkpoint stores the createdTimestamp of the most-recent
+        detection already indexed. Subsequent polls only fetch detections newer
+        than that, so re-polling an incident that has been updated server-side
+        does not re-index the detections we already have.
+
+        Returns True on success, False if the API call failed.
+        """
+        checkpoint_key = f"bcd_detections_last_{incident_id}"
+        last_ts = self._get_checkpoint(service, checkpoint_key)
+
         try:
-            detections = api.get_incident_detections(incident_id)
+            detections = api.get_incident_detections(
+                incident_id, created_timestamp_start=last_ts
+            )
         except WithSecureAPIError as exc:
             logger.error(
                 "Failed to fetch detections for incident %s: %s", incident_id, exc
             )
             return False
 
+        newest_ts = last_ts
         for detection in detections:
             detection["incident_id"] = incident_id
             ew.write_event(
@@ -248,9 +283,18 @@ class BCDInput(smi.Script):
                     source="withsecure_elements_BCD",
                 )
             )
+            det_ts = detection.get("createdTimestamp")
+            if det_ts and (newest_ts is None or det_ts > newest_ts):
+                newest_ts = det_ts
+
+        if detections and newest_ts and newest_ts != last_ts:
+            self._set_checkpoint(service, checkpoint_key, _advance_ts(newest_ts))
 
         logger.info(
-            "Indexed %d detections for incident %s", len(detections), incident_id
+            "Indexed %d new detections for incident %s (checkpoint=%s)",
+            len(detections),
+            incident_id,
+            newest_ts or "none",
         )
         return True
 
@@ -299,17 +343,6 @@ def _parse_risk_levels(raw: str) -> List[str]:
 
 def _parse_bool(value: str) -> bool:
     return str(value).strip().lower() in ("1", "true", "yes")
-
-
-def _utc_iso(dt: datetime) -> str:
-    ms = dt.microsecond // 1000
-    return dt.strftime(f"%Y-%m-%dT%H:%M:%S.{ms:03d}Z")
-
-
-def _advance_ts(ts: str) -> str:
-    """Return ts + 1 ms so the next poll window is exclusive of the last seen event."""
-    dt = datetime.strptime(ts, "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=timezone.utc)
-    return _utc_iso(dt + timedelta(milliseconds=1))
 
 
 if __name__ == "__main__":

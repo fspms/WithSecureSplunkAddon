@@ -3,7 +3,7 @@
 A Technology Add-on (TA) for use with Splunk® Enterprise that ingests security telemetry from the **WithSecure Elements** platform — including EPP security events and Broad Context Detection (BCD) incidents and detections.
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Splunk](https://img.shields.io/badge/Splunk-%3E%3D8.0-green.svg)](https://www.splunk.com)
+[![Splunk](https://img.shields.io/badge/Splunk-%3E%3D9.0-green.svg)](https://www.splunk.com)
 [![Python](https://img.shields.io/badge/Python-3.x-blue.svg)](https://www.python.org)
 
 ---
@@ -23,7 +23,7 @@ A Technology Add-on (TA) for use with Splunk® Enterprise that ingests security 
 
 | Component | Version |
 |---|---|
-| Splunk Enterprise | ≥ 8.0 |
+| Splunk Enterprise | ≥ 9.0 |
 | Python | 3.x (bundled with Splunk) |
 | WithSecure Elements | API access with OAuth2 credentials |
 
@@ -55,6 +55,7 @@ Go to **Settings → Data Inputs** and configure one or both inputs:
 | `client_id` | OAuth2 Client ID |
 | `client_secret` | OAuth2 Client Secret |
 | `org_id` | WithSecure Organization UUID |
+| `severity_filter` | Comma-separated filter: `info,warning,critical` (blank = all) |
 | `interval` | Poll interval in seconds (default: 300) |
 | `index` | Target Splunk index (default: main) |
 
@@ -65,7 +66,7 @@ Go to **Settings → Data Inputs** and configure one or both inputs:
 | `client_id` | OAuth2 Client ID |
 | `client_secret` | OAuth2 Client Secret |
 | `org_id` | WithSecure Organization UUID |
-| `risk_level_filter` | Comma-separated filter: `low,medium,high,critical` (blank = all) |
+| `risk_level_filter` | Comma-separated filter: `info,low,medium,high,severe` (blank = all) |
 | `auto_fetch_detections` | `true` to auto-index detections per incident (default: false) |
 | `interval` | Poll interval in seconds (default: 300) |
 | `index` | Target Splunk index (default: main) |
@@ -79,6 +80,21 @@ Go to **Settings → Data Inputs** and configure one or both inputs:
 | `withsecure:epp:security_event` | EPP endpoint protection events | `withsecure_elements_security_events` |
 | `withsecure:epp:bcd_incident` | BCD incident summaries | `withsecure_elements_BCD` |
 | `withsecure:epp:bcd_detection` | Granular BCD detections (process/file/cloud) | `withsecure_elements_BCD_incidents` |
+
+### BCD incident updates → one event per update
+
+A BCD incident is a long-lived object that evolves over time (new detections rattached, status changes, resolution, comments...). The WithSecure API exposes this via `updatedTimestamp`, which changes on every modification.
+
+This add-on indexes **one Splunk event per update**, with `_time` set to that update's `updatedTimestamp` (via `props.conf [withsecure:epp:bcd_incident]`). This is intentional: it gives a full audit timeline of the incident's lifecycle in Splunk.
+
+**Consequence:** the same `incidentId` appears multiple times in the index — once per server-side update. To query the *current* state of incidents, dedup by `incidentId` and keep the latest:
+
+```spl
+index=main sourcetype="withsecure:epp:bcd_incident"
+| dedup incidentId sortby -_time
+```
+
+For audit/timeline analysis (who closed what when, when severity escalated, etc.), search without dedup.
 
 ---
 
@@ -137,8 +153,9 @@ The command checks whether detections are already indexed. If found, they are re
 # All EPP security events in the last 24 hours
 index=main sourcetype="withsecure:epp:security_event" earliest=-24h
 
-# High and critical BCD incidents
-index=main sourcetype="withsecure:epp:bcd_incident" riskLevel=high OR riskLevel=critical
+# High and severe BCD incidents (current state of each — see note on BCD incident updates above)
+index=main sourcetype="withsecure:epp:bcd_incident" (riskLevel=high OR riskLevel=severe)
+| dedup incidentId sortby -_time
 
 # Fetch detections for a specific incident on-demand
 | fetchdetections incident_id="308b348b-92de-42a5-af12-2c1169e91827"

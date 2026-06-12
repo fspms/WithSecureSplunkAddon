@@ -10,6 +10,7 @@ import base64
 import logging
 import os
 import time
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 import requests
@@ -30,6 +31,18 @@ _USER_AGENT = "SplunkTA-WithSecureElements/1.0.0"
 # Retry configuration
 _MAX_RETRIES = 3
 _RETRY_BACKOFF = 2.0
+
+
+def utc_iso(dt: datetime) -> str:
+    """Format a UTC datetime as ISO-8601 with millisecond precision."""
+    ms = dt.microsecond // 1000
+    return dt.strftime(f"%Y-%m-%dT%H:%M:%S.{ms:03d}Z")
+
+
+def advance_ts(ts: str) -> str:
+    """Return ts + 1 ms (used to make checkpoint comparisons exclusive)."""
+    dt = datetime.strptime(ts, "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=timezone.utc)
+    return utc_iso(dt + timedelta(milliseconds=1))
 
 
 def flatten_detection(detection: Dict[str, Any]) -> Dict[str, Any]:
@@ -166,7 +179,8 @@ class WithSecureClient:
         self,
         timestamp_start: str,
         timestamp_end: Optional[str] = None,
-        exclusive_start: Optional[str] = None,
+        severities: Optional[List[str]] = None,
+        anchor: Optional[str] = None,
     ) -> Tuple[List[Dict[str, Any]], Optional[str]]:
         """
         Fetch EPP security events via GET /security-events/v1/security-events.
@@ -176,7 +190,9 @@ class WithSecureClient:
         Args:
             timestamp_start: ISO-8601 UTC timestamp (inclusive lower bound).
             timestamp_end: ISO-8601 UTC timestamp (exclusive upper bound). Defaults to now.
-            exclusive_start: Pagination cursor (nextAnchor from previous response).
+            severities: Optional list of severity strings to filter by.
+                Valid values per the API spec: info, warning, critical.
+            anchor: Pagination cursor (nextAnchor from previous response).
 
         Returns:
             Tuple of (list of security event dicts, nextAnchor or None).
@@ -184,11 +200,20 @@ class WithSecureClient:
         params: Dict[str, Any] = {
             "organizationId": self._org_id,
             "persistenceTimestampStart": timestamp_start,
+            # asc => oldest events first. On a partial pagination failure the
+            # caller's checkpoint stays at the last successfully processed page,
+            # so the un-fetched (newer) events are picked up on the next poll.
+            # With the API default (desc), a partial failure would silently
+            # drop the older events that hadn't been paged in yet.
+            "order": "asc",
         }
         if timestamp_end:
             params["persistenceTimestampEnd"] = timestamp_end
-        if exclusive_start:
-            params["exclusiveStart"] = exclusive_start
+        if severities:
+            # API accepts repeated severity params; requests handles list values
+            params["severity"] = severities
+        if anchor:
+            params["anchor"] = anchor
 
         resp = self._request("get", _EPP_EVENTS_ENDPOINT, params=params)
         data = resp.json()
@@ -209,17 +234,18 @@ class WithSecureClient:
         self,
         updated_start: str,
         risk_levels: Optional[List[str]] = None,
-        exclusive_start: Optional[str] = None,
+        anchor: Optional[str] = None,
     ) -> Tuple[List[Dict[str, Any]], Optional[str]]:
         """
         Fetch BCD incidents via GET /incidents/v1/incidents.
 
-        Handles pagination automatically when exclusive_start is provided.
+        Handles pagination automatically when anchor is provided.
 
         Args:
             updated_start: ISO-8601 UTC timestamp for updatedTimestampStart filter.
             risk_levels: Optional list of risk level strings to filter by.
-            exclusive_start: Pagination cursor (nextAnchor from previous response).
+                Valid values per the API spec: info, low, medium, high, severe.
+            anchor: Pagination cursor (nextAnchor from previous response).
 
         Returns:
             Tuple of (list of incident dicts, nextAnchor or None).
@@ -227,11 +253,14 @@ class WithSecureClient:
         params: Dict[str, Any] = {
             "organizationId": self._org_id,
             "updatedTimestampStart": updated_start,
+            # asc => oldest first; see get_epp_events for the rationale.
+            "order": "asc",
         }
         if risk_levels:
-            params["riskLevel"] = ",".join(risk_levels)
-        if exclusive_start:
-            params["exclusiveStart"] = exclusive_start
+            # API accepts repeated riskLevel params; requests handles list values
+            params["riskLevel"] = risk_levels
+        if anchor:
+            params["anchor"] = anchor
 
         resp = self._request("get", _BCD_INCIDENTS_ENDPOINT, params=params)
         data = resp.json()
@@ -248,23 +277,54 @@ class WithSecureClient:
     # Incident Detections
     # ------------------------------------------------------------------
 
-    def get_incident_detections(self, incident_id: str) -> List[Dict[str, Any]]:
+    def get_incident_detections(
+        self,
+        incident_id: str,
+        created_timestamp_start: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """
-        Fetch detections for a specific BCD incident.
+        Fetch all detections for a specific BCD incident, following pagination
+        via the nextAnchor cursor (API page size is up to 100).
 
         Args:
             incident_id: The WithSecure incident identifier.
+            created_timestamp_start: Optional ISO-8601 inclusive lower bound on
+                detection createdTimestamp. Detections are immutable (the spec
+                exposes no updatedTimestamp for them), so this is sufficient to
+                fetch only the detections added since the last successful sync.
 
         Returns:
-            List of detection dicts.
+            List of detection dicts (all pages aggregated).
         """
-        params = {
-            "incidentId": incident_id,
-            "organizationId": self._org_id,
-        }
-        resp = self._request("get", _BCD_DETECTIONS_ENDPOINT, params=params)
-        data = resp.json()
-        detections: List[Dict[str, Any]] = data["items"] if "items" in data else []
+        detections: List[Dict[str, Any]] = []
+        anchor: Optional[str] = None
+        seen_anchors: set = set()
+        while True:
+            params: Dict[str, Any] = {
+                "incidentId": incident_id,
+                "organizationId": self._org_id,
+            }
+            if created_timestamp_start:
+                params["createdTimestampStart"] = created_timestamp_start
+            if anchor:
+                params["anchor"] = anchor
+            resp = self._request("get", _BCD_DETECTIONS_ENDPOINT, params=params)
+            data = resp.json()
+            page = data["items"] if "items" in data else []
+            detections.extend(page)
+            anchor = data["nextAnchor"] if "nextAnchor" in data else None
+            if not anchor:
+                break
+            # Defensive: API misbehavior could return the same cursor twice.
+            if anchor in seen_anchors:
+                logger.warning(
+                    "Detection pagination loop detected for incident %s "
+                    "(repeated nextAnchor); aborting after %d items",
+                    incident_id,
+                    len(detections),
+                )
+                break
+            seen_anchors.add(anchor)
         logger.info(
             "Fetched %d detections for incident %s", len(detections), incident_id
         )

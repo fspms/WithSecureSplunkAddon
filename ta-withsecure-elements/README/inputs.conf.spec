@@ -11,6 +11,11 @@ org_id = <string>
 * WithSecure Elements Organization UUID.
 * Required.
 
+severity_filter = <string>
+* Comma-separated severities to collect: info,warning,critical.
+* Leave blank to collect all severities.
+* Optional.
+
 interval = <integer>
 * Poll interval in seconds. Default: 300.
 
@@ -32,7 +37,7 @@ org_id = <string>
 * Required.
 
 risk_level_filter = <string>
-* Comma-separated risk levels to collect: low,medium,high,critical.
+* Comma-separated risk levels to collect: info,low,medium,high,severe.
 * Leave blank to collect all risk levels.
 * Optional.
 
