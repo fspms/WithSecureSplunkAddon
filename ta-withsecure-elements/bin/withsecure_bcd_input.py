@@ -14,8 +14,12 @@ import json
 import logging
 import os
 import sys
+import time
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
+
+_DEFAULT_INTERVAL_SECONDS = 300
+_HEARTBEAT_EVERY_CYCLES = 10
 
 _bin = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _bin)
@@ -31,6 +35,7 @@ from withsecure_api import (
     utc_iso as _utc_iso,
     advance_ts as _advance_ts,
 )
+from withsecure_locks import acquire_detection_lock, release_detection_lock
 
 logger = logging.getLogger("ta-withsecure-elements")
 
@@ -132,11 +137,41 @@ class BCDInput(smi.Script):
             raise ValueError("auto_fetch_detections must be 'true' or 'false'")
 
     def stream_events(self, inputs: smi.InputDefinition, ew: smi.EventWriter) -> None:
-        for input_name, input_item in inputs.inputs.items():
+        # Internal daemon loop — see withsecure_epp_input.py for rationale,
+        # including the two-layer try/except (inner = per-input poll errors,
+        # outer = any other unexpected exception keeps the daemon alive).
+        cycle = 0
+        while True:
+            cycle += 1
+            interval = _DEFAULT_INTERVAL_SECONDS
             try:
-                self._process_input(input_name, input_item, inputs, ew)
+                for input_name, input_item in inputs.inputs.items():
+                    try:
+                        self._process_input(input_name, input_item, inputs, ew)
+                    except Exception:
+                        logger.exception(
+                            "Unhandled error in BCD input %s", input_name
+                        )
+                    try:
+                        interval = int(
+                            input_item.get("interval", _DEFAULT_INTERVAL_SECONDS)
+                        )
+                    except (TypeError, ValueError):
+                        interval = _DEFAULT_INTERVAL_SECONDS
+                if cycle % _HEARTBEAT_EVERY_CYCLES == 0:
+                    logger.info(
+                        "BCD daemon heartbeat: completed cycle %d, "
+                        "next poll in %ds",
+                        cycle,
+                        interval,
+                    )
             except Exception:
-                logger.exception("Unhandled error in BCD input %s", input_name)
+                logger.exception(
+                    "Unexpected error in BCD daemon loop (cycle %d); "
+                    "continuing after sleep",
+                    cycle,
+                )
+            time.sleep(interval)
 
     def _process_input(
         self,
@@ -154,6 +189,7 @@ class BCDInput(smi.Script):
         auto_fetch = _parse_bool(input_item.get("auto_fetch_detections", "0"))
 
         service = self._get_service(inputs)
+        session_key = inputs.metadata["session_key"]
         checkpoint_key = f"bcd_last_timestamp_{org_id}"
         last_ts = self._get_checkpoint(service, checkpoint_key)
 
@@ -197,7 +233,13 @@ class BCDInput(smi.Script):
                     incident_id = incident.get("incidentId")
                     if incident_id:
                         success = self._fetch_and_index_detections(
-                            api, service, incident_id, index, input_name, ew
+                            api,
+                            service,
+                            session_key,
+                            incident_id,
+                            index,
+                            input_name,
+                            ew,
                         )
                         if not success and incident_ts and (
                             oldest_failed_ts is None or incident_ts < oldest_failed_ts
@@ -245,6 +287,7 @@ class BCDInput(smi.Script):
         self,
         api: WithSecureClient,
         service: client.Service,
+        session_key: str,
         incident_id: str,
         index: str,
         source: str,
@@ -253,50 +296,68 @@ class BCDInput(smi.Script):
         """Fetch detections for an incident and index only the new ones.
 
         A per-incident checkpoint stores the createdTimestamp of the most-recent
-        detection already indexed. Subsequent polls only fetch detections newer
-        than that, so re-polling an incident that has been updated server-side
-        does not re-index the detections we already have.
+        detection already indexed, and a per-incident KV-store lock prevents
+        concurrent fetches from the on-demand ``| fetchdetections`` command.
 
-        Returns True on success, False if the API call failed.
+        Returns True on success, False if the API call failed or the lock
+        could not be acquired (caller treats this as a transient failure and
+        caps the input-level checkpoint so the incident is retried at the
+        next poll cycle).
         """
-        checkpoint_key = f"bcd_detections_last_{incident_id}"
-        last_ts = self._get_checkpoint(service, checkpoint_key)
-
-        try:
-            detections = api.get_incident_detections(
-                incident_id, created_timestamp_start=last_ts
-            )
-        except WithSecureAPIError as exc:
-            logger.error(
-                "Failed to fetch detections for incident %s: %s", incident_id, exc
+        lock_owner = acquire_detection_lock(session_key, incident_id)
+        if lock_owner is None:
+            logger.info(
+                "Skipping detections for incident %s: lock held by another "
+                "process (likely an in-flight | fetchdetections)",
+                incident_id,
             )
             return False
 
-        newest_ts = last_ts
-        for detection in detections:
-            detection["incident_id"] = incident_id
-            ew.write_event(
-                smi.Event(
-                    data=json.dumps(flatten_detection(detection)),
-                    sourcetype=_SOURCETYPE_DETECTION,
-                    index=index,
-                    source="withsecure_elements_BCD",
+        try:
+            checkpoint_key = f"bcd_detections_last_{incident_id}"
+            last_ts = self._get_checkpoint(service, checkpoint_key)
+
+            try:
+                detections = api.get_incident_detections(
+                    incident_id, created_timestamp_start=last_ts
                 )
+            except WithSecureAPIError as exc:
+                logger.error(
+                    "Failed to fetch detections for incident %s: %s",
+                    incident_id,
+                    exc,
+                )
+                return False
+
+            newest_ts = last_ts
+            for detection in detections:
+                detection["incident_id"] = incident_id
+                ew.write_event(
+                    smi.Event(
+                        data=json.dumps(flatten_detection(detection)),
+                        sourcetype=_SOURCETYPE_DETECTION,
+                        index=index,
+                        source="withsecure_elements_BCD",
+                    )
+                )
+                det_ts = detection.get("createdTimestamp")
+                if det_ts and (newest_ts is None or det_ts > newest_ts):
+                    newest_ts = det_ts
+
+            if detections and newest_ts and newest_ts != last_ts:
+                self._set_checkpoint(
+                    service, checkpoint_key, _advance_ts(newest_ts)
+                )
+
+            logger.info(
+                "Indexed %d new detections for incident %s (checkpoint=%s)",
+                len(detections),
+                incident_id,
+                newest_ts or "none",
             )
-            det_ts = detection.get("createdTimestamp")
-            if det_ts and (newest_ts is None or det_ts > newest_ts):
-                newest_ts = det_ts
-
-        if detections and newest_ts and newest_ts != last_ts:
-            self._set_checkpoint(service, checkpoint_key, _advance_ts(newest_ts))
-
-        logger.info(
-            "Indexed %d new detections for incident %s (checkpoint=%s)",
-            len(detections),
-            incident_id,
-            newest_ts or "none",
-        )
-        return True
+            return True
+        finally:
+            release_detection_lock(session_key, incident_id, lock_owner)
 
     # ------------------------------------------------------------------
     # KV Store helpers

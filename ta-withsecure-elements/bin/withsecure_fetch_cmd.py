@@ -41,6 +41,7 @@ from withsecure_api import (
     flatten_detection,
     advance_ts,
 )
+from withsecure_locks import acquire_detection_lock, release_detection_lock
 
 _SOURCETYPE = "withsecure:epp:bcd_detection"
 _CHECKPOINT_COLLECTION = "checkpoints"
@@ -88,62 +89,85 @@ class FetchDetectionsCommand(GeneratingCommand):
             )
             return
 
-        # 4) Fetch potentially-new detections from the API.
-        try:
-            api = WithSecureClient(
-                creds["client_id"], creds["client_secret"], creds["org_id"]
-            )
-            new_detections = api.get_incident_detections(
-                self.incident_id,
-                created_timestamp_start=advance_ts(cursor) if cursor else None,
-            )
-        except WithSecureAPIError as exc:
-            # API failure: still surface what we have indexed.
-            if existing:
-                for event in existing:
-                    yield event
-                return
-            self.error_exit(exc, str(exc))
-            return
-
-        # 5) Index the new detections and track the newest createdTimestamp.
-        index = creds.get("index", "main")
-        uri = (
-            f"/services/receivers/simple"
-            f"?index={index}&sourcetype={_SOURCETYPE}&source=withsecure_elements_BCD_incidents"
-        )
-        newest_seen = cursor
-        flat_new = []
-        for detection in new_detections:
-            detection["incident_id"] = self.incident_id
-            flat = flatten_detection(detection)
-            flat_new.append(flat)
+        # 4) Acquire the per-incident lock to avoid racing with the
+        #    auto-fetch modular input. If denied, surface a warning and
+        #    yield only the indexed detections — the auto-fetch will pick
+        #    up any new ones in the background.
+        lock_owner = acquire_detection_lock(session_key, self.incident_id)
+        if lock_owner is None:
             try:
-                rest.simpleRequest(
-                    uri,
-                    sessionKey=session_key,
-                    method="POST",
-                    jsonargs=json.dumps(flat),
-                    raiseAllErrors=True,
+                self.write_warning(
+                    "Auto-fetch is in progress for this incident; showing "
+                    "already-indexed detections only. Re-run | fetchdetections "
+                    "in a few seconds to pick up any newly arrived detections."
                 )
             except Exception:
-                pass  # indexing failure is non-fatal; still yield the result
-            det_ts = detection.get("createdTimestamp")
-            if det_ts and (newest_seen is None or det_ts > newest_seen):
-                newest_seen = det_ts
+                # write_warning may not exist in older splunklib;
+                # the search proceeds without a UI banner in that case.
+                pass
+            for event in existing:
+                yield event
+            return
 
-        # 6) Advance the shared KV checkpoint so the modular input does not
-        #    re-fetch these detections on its next poll.
-        if newest_seen and newest_seen != cursor:
-            self._write_kv_checkpoint(
-                session_key, checkpoint_key, advance_ts(newest_seen)
+        try:
+            # 5) Fetch potentially-new detections from the API.
+            try:
+                api = WithSecureClient(
+                    creds["client_id"], creds["client_secret"], creds["org_id"]
+                )
+                new_detections = api.get_incident_detections(
+                    self.incident_id,
+                    created_timestamp_start=advance_ts(cursor) if cursor else None,
+                )
+            except WithSecureAPIError as exc:
+                # API failure: still surface what we have indexed.
+                if existing:
+                    for event in existing:
+                        yield event
+                    return
+                self.error_exit(exc, str(exc))
+                return
+
+            # 6) Index the new detections and track the newest createdTimestamp.
+            index = creds.get("index", "main")
+            uri = (
+                f"/services/receivers/simple"
+                f"?index={index}&sourcetype={_SOURCETYPE}&source=withsecure_elements_BCD_incidents"
             )
+            newest_seen = cursor
+            flat_new = []
+            for detection in new_detections:
+                detection["incident_id"] = self.incident_id
+                flat = flatten_detection(detection)
+                flat_new.append(flat)
+                try:
+                    rest.simpleRequest(
+                        uri,
+                        sessionKey=session_key,
+                        method="POST",
+                        jsonargs=json.dumps(flat),
+                        raiseAllErrors=True,
+                    )
+                except Exception:
+                    pass  # indexing failure is non-fatal; still yield the result
+                det_ts = detection.get("createdTimestamp")
+                if det_ts and (newest_seen is None or det_ts > newest_seen):
+                    newest_seen = det_ts
 
-        # 7) Yield existing first (preserves their _time), then the new ones.
-        for event in existing:
-            yield event
-        for flat in flat_new:
-            yield flat
+            # 7) Advance the shared KV checkpoint so the modular input does not
+            #    re-fetch these detections on its next poll.
+            if newest_seen and newest_seen != cursor:
+                self._write_kv_checkpoint(
+                    session_key, checkpoint_key, advance_ts(newest_seen)
+                )
+
+            # 8) Yield existing first (preserves their _time), then the new ones.
+            for event in existing:
+                yield event
+            for flat in flat_new:
+                yield flat
+        finally:
+            release_detection_lock(session_key, self.incident_id, lock_owner)
 
     # ------------------------------------------------------------------
     # Helpers

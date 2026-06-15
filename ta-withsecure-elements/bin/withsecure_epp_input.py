@@ -11,8 +11,12 @@ import json
 import logging
 import os
 import sys
+import time
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
+
+_DEFAULT_INTERVAL_SECONDS = 300
+_HEARTBEAT_EVERY_CYCLES = 10
 
 # Add bin/ and lib/ to path so splunklib and withsecure_api are importable.
 _bin = os.path.dirname(os.path.abspath(__file__))
@@ -105,11 +109,51 @@ class EPPInput(smi.Script):
                     )
 
     def stream_events(self, inputs: smi.InputDefinition, ew: smi.EventWriter) -> None:
-        for input_name, input_item in inputs.inputs.items():
+        # Run as an internal daemon: poll each configured input, sleep for the
+        # input's configured `interval`, repeat. Splunk launches this process
+        # once at input enable / Splunk start; it lives until the input is
+        # disabled or Splunk shuts down (SIGTERM raises SystemExit naturally).
+        # This pattern is robust across Splunk versions whose modular-input
+        # scheduler may not reliably relaunch the script on its own.
+        #
+        # Two layers of error handling:
+        #   - inner try/except around _process_input → per-input poll errors
+        #     (API down, rate limit, transient failure) don't break the cycle
+        #   - outer try/except around the loop body → any other unexpected
+        #     exception (config parse, splunklib internals, etc.) is logged
+        #     and the daemon keeps going at the next sleep tick
+        cycle = 0
+        while True:
+            cycle += 1
+            interval = _DEFAULT_INTERVAL_SECONDS
             try:
-                self._process_input(input_name, input_item, inputs, ew)
+                for input_name, input_item in inputs.inputs.items():
+                    try:
+                        self._process_input(input_name, input_item, inputs, ew)
+                    except Exception:
+                        logger.exception(
+                            "Unhandled error in EPP input %s", input_name
+                        )
+                    try:
+                        interval = int(
+                            input_item.get("interval", _DEFAULT_INTERVAL_SECONDS)
+                        )
+                    except (TypeError, ValueError):
+                        interval = _DEFAULT_INTERVAL_SECONDS
+                if cycle % _HEARTBEAT_EVERY_CYCLES == 0:
+                    logger.info(
+                        "EPP daemon heartbeat: completed cycle %d, "
+                        "next poll in %ds",
+                        cycle,
+                        interval,
+                    )
             except Exception:
-                logger.exception("Unhandled error in EPP input %s", input_name)
+                logger.exception(
+                    "Unexpected error in EPP daemon loop (cycle %d); "
+                    "continuing after sleep",
+                    cycle,
+                )
+            time.sleep(interval)
 
     def _process_input(
         self,

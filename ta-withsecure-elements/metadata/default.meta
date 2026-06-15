@@ -19,3 +19,6 @@ access = read : [ * ], write : [ admin, sc_admin ]
 
 [collections/checkpoints]
 access = read : [ admin, sc_admin, power ], write : [ admin, sc_admin, power ]
+
+[collections/locks]
+access = read : [ admin, sc_admin, power ], write : [ admin, sc_admin, power ]
