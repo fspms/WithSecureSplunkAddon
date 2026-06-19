@@ -5,16 +5,19 @@ A Technology Add-on (TA) for use with Splunk® Enterprise that ingests security 
 [![Splunkbase](https://img.shields.io/badge/Splunkbase-Install-65A637.svg)](https://splunkbase.splunk.com/app/8820)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Splunk](https://img.shields.io/badge/Splunk-%3E%3D9.0-green.svg)](https://www.splunk.com)
-[![Python](https://img.shields.io/badge/Python-3.x-blue.svg)](https://www.python.org)
+[![Python](https://img.shields.io/badge/Python-3.9%2B-blue.svg)](https://www.python.org)
 
 ---
 
 ## Features
 
-- **EPP Security Events** — polls the WithSecure Elements API every 5 minutes and indexes endpoint protection events (`sourcetype=withsecure:epp:security_event`)
+- **EPP Security Events** — polls the WithSecure Elements API on a configurable interval (default 5 minutes) and indexes endpoint protection events (`sourcetype=withsecure:epp:security_event`)
 - **BCD Incidents** — indexes Broad Context Detection incidents with configurable risk level filtering (`sourcetype=withsecure:epp:bcd_incident`)
 - **BCD Detections** — optionally auto-fetches granular process/file/network detections for each incident, or on-demand via a workflow action (`sourcetype=withsecure:epp:bcd_detection`)
 - **Get BCD Details** workflow action — one-click button on any BCD incident event that returns detections directly in Splunk Search
+- **Windows EventLog field extraction** — for `systemEventsLog` engine events, the `<Data Name='X'>Y</Data>` pairs inside `details.eventXml` are auto-extracted as searchable fields (`TargetUserName`, `LogonType`, `ProcessName`, etc.)
+- **Daemon-style polling** — modular inputs run as long-lived daemons with a configurable interval, robust against Splunk's modular-input scheduler not relaunching the script on time
+- **Concurrent-fetch safe** — per-incident KV Store advisory lock prevents race conditions between auto-fetch and on-demand `| fetchdetections`
 - **CIM compliant** — field mappings for the Endpoint, Malware, and Intrusion Detection data models
 - **Checkpoint-based polling** — KV Store checkpoints ensure no duplicate events across restarts
 
@@ -25,8 +28,9 @@ A Technology Add-on (TA) for use with Splunk® Enterprise that ingests security 
 | Component | Version |
 |---|---|
 | Splunk Enterprise | ≥ 9.0 |
-| Python | 3.x (bundled with Splunk) |
-| WithSecure Elements | API access with OAuth2 credentials |
+| Python | 3.9+ (bundled with Splunk) |
+| Splunk KV Store | Enabled (used for checkpoints and per-incident locks) |
+| WithSecure Elements | API access with OAuth2 credentials (`connect.api.read` scope) |
 
 ---
 
@@ -92,7 +96,7 @@ Go to **Settings → Data Inputs** and configure one or both inputs:
 
 ### BCD incident updates → one event per update
 
-A BCD incident is a long-lived object that evolves over time (new detections rattached, status changes, resolution, comments...). The WithSecure API exposes this via `updatedTimestamp`, which changes on every modification.
+A BCD incident is a long-lived object that evolves over time (new detections attached, status changes, resolution, comments...). The WithSecure API exposes this via `updatedTimestamp`, which changes on every modification.
 
 This add-on indexes **one Splunk event per update**, with `_time` set to that update's `updatedTimestamp` (via `props.conf [withsecure:epp:bcd_incident]`). This is intentional: it gives a full audit timeline of the incident's lifecycle in Splunk.
 
@@ -104,6 +108,24 @@ index=main sourcetype="withsecure:epp:bcd_incident"
 ```
 
 For audit/timeline analysis (who closed what when, when severity escalated, etc.), search without dedup.
+
+---
+
+## Windows EventLog field extraction
+
+Events from the `systemEventsLog` engine carry the original Windows Event Log XML in `details.eventXml`. The TA ships a search-time extraction that pulls every `<Data Name='X'>Y</Data>` pair into an individual field, so they are searchable directly without parsing the XML.
+
+Field names follow the Windows EventLog convention (PascalCase): `TargetUserName`, `LogonType`, `IpAddress`, `ProcessName`, `AuthenticationPackageName`, `WorkstationName`, `SubjectUserSid`, etc. — same naming as Splunk's own `WinEventLog` source.
+
+```spl
+# Successful RDP-style remote logons (EventID 4624, LogonType 10)
+index=main sourcetype="withsecure:epp:security_event"
+    engine=systemEventsLog systemDataEventId=4624 LogonType=10
+| stats count earliest(_time) as first_seen latest(_time) as last_seen
+    by TargetUserName SubjectUserName systemDataComputer
+```
+
+The extraction is **search-time only**: it has zero cost at ingestion, applies retroactively to events already in the index, and produces no matches for events from other engines (so it's transparent for the rest of the data).
 
 ---
 
@@ -173,6 +195,12 @@ index=main sourcetype="withsecure:epp:bcd_incident" (riskLevel=high OR riskLevel
 index=main sourcetype="withsecure:epp:bcd_detection"
 | stats count by mitre_technique_id ac_mitre_tactic
 | sort -count
+
+# Windows logons collected via the systemEventsLog engine (LogonType 10 = RDP)
+index=main sourcetype="withsecure:epp:security_event"
+    engine=systemEventsLog systemDataEventId=4624 LogonType=10
+| stats count earliest(_time) as first_seen latest(_time) as last_seen
+    by TargetUserName SubjectUserName systemDataComputer
 ```
 
 ---
@@ -194,7 +222,14 @@ WithSecure Elements API
                                                              sourcetype: withsecure:epp:bcd_detection
 ```
 
-Checkpoints are stored in the Splunk KV Store (`checkpoints` collection) and advance by 1ms after each successful poll to prevent duplicate ingestion.
+Both modular inputs run as **long-lived daemons**: each one polls, sleeps for the configured `interval`, and repeats inside its own `while True` loop. This avoids depending on Splunk's modular-input scheduler relaunching the script on time, which has proven unreliable across environments. A heartbeat INFO log is emitted every 10 cycles so operators can see the daemon is healthy even during quiet periods.
+
+### KV Store collections
+
+| Collection | Purpose |
+|---|---|
+| `checkpoints` | Per-input poll cursors (`epp_last_timestamp_<org>`, `bcd_last_timestamp_<org>`) and per-incident detection cursors (`bcd_detections_last_<incident_id>`). Each cursor advances by 1 ms after a successful poll to prevent duplicate ingestion. |
+| `locks` | Per-incident advisory locks (90 s TTL) shared between the auto-fetch input and the `\| fetchdetections` command. Prevents the two flows from racing each other when both target the same incident concurrently. Expired locks are reclaimed by the next acquirer. |
 
 ---
 

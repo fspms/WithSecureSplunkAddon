@@ -5,7 +5,7 @@
     "id": {
       "group": null,
       "name": "ta-withsecure-elements",
-      "version": "1.0.3"
+      "version": "1.0.4"
     },
     "author": [
       {
@@ -14,8 +14,8 @@
         "company": "WithSecure"
       }
     ],
-    "releaseDate": "2026-06-15",
-    "description": "Collects EPP Security Events and EDR Broad Context Detections from the WithSecure Elements API.",
+    "releaseDate": "2026-06-16",
+    "description": "Collects EPP Security Events and Broad Context Detection (BCD) incidents and detections from the WithSecure Elements API.",
     "classification": {
       "intendedAudience": "IT Security",
       "categories": ["Security, Fraud & Compliance"],
