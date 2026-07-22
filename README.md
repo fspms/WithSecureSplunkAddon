@@ -69,6 +69,9 @@ Go to **Settings → Data Inputs** and configure one or both inputs:
 | `client_secret` | OAuth2 Client Secret |
 | `org_id` | WithSecure Organization UUID |
 | `severity_filter` | Comma-separated filter: `info,warning,critical` (blank = all) |
+| `proxy_url` | Optional HTTP/HTTPS proxy URL for outbound API calls (blank = direct) |
+| `proxy_username` | Optional proxy authentication username |
+| `proxy_password` | Optional proxy authentication password |
 | `interval` | Poll interval in seconds (default: 300) |
 | `index` | Target Splunk index (default: main) |
 
@@ -81,8 +84,34 @@ Go to **Settings → Data Inputs** and configure one or both inputs:
 | `org_id` | WithSecure Organization UUID |
 | `risk_level_filter` | Comma-separated filter: `info,low,medium,high,severe` (blank = all) |
 | `auto_fetch_detections` | `true` to auto-index detections per incident (default: false) |
+| `proxy_url` | Optional HTTP/HTTPS proxy URL for outbound API calls (blank = direct) |
+| `proxy_username` | Optional proxy authentication username |
+| `proxy_password` | Optional proxy authentication password |
 | `interval` | Poll interval in seconds (default: 300) |
 | `index` | Target Splunk index (default: main) |
+
+### Proxy configuration
+
+If your Splunk host must reach the internet through a corporate HTTP/HTTPS proxy, set `proxy_url` on each input. Both modular inputs (EPP + BCD) and the `| fetchdetections` command honour the setting; when `auto_fetch_detections=true`, detections are fetched through the same proxy.
+
+Example — proxy without authentication:
+
+```
+proxy_url = http://proxy.corp.example:3128
+```
+
+Example — proxy with authentication:
+
+```
+proxy_url = http://proxy.corp.example:3128
+proxy_username = svc-splunk
+proxy_password = <secret>
+```
+
+Notes:
+- If the URL has no scheme it is assumed to be `http://`.
+- Special characters in the password are URL-encoded automatically before being embedded in the proxy URL.
+- Splunk's global `server.conf [proxyConfig]` is used only by splunkd's internal services and is **not** inherited by modular input scripts — each add-on must expose its own proxy configuration, which is the industry-standard pattern used by every Splunk-published add-on that talks to a SaaS API.
 
 ---
 

@@ -12,6 +12,7 @@ import os
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import quote, urlparse, urlunparse
 
 import requests
 
@@ -87,7 +88,15 @@ class WithSecureClient:
     Thread-safety: not thread-safe; instantiate one client per input process.
     """
 
-    def __init__(self, client_id: str, client_secret: str, org_id: str) -> None:
+    def __init__(
+        self,
+        client_id: str,
+        client_secret: str,
+        org_id: str,
+        proxy_url: Optional[str] = None,
+        proxy_username: Optional[str] = None,
+        proxy_password: Optional[str] = None,
+    ) -> None:
         self._client_id = client_id
         self._client_secret = client_secret
         self._org_id = org_id
@@ -95,6 +104,19 @@ class WithSecureClient:
         self._token_expires_at: float = 0.0
         self._session = requests.Session()
         self._session.headers.update({"User-Agent": _USER_AGENT})
+
+        # If a proxy URL is configured, honour it for every outbound call
+        # (token endpoint + all resource endpoints). Credentials are folded
+        # into the URL netloc so that requests presents them via Proxy-
+        # Authorization on connect. Special characters in the password are
+        # URL-encoded to keep the resulting URL parseable.
+        proxy_full = _build_proxy_url(proxy_url, proxy_username, proxy_password)
+        if proxy_full:
+            self._session.proxies = {"http": proxy_full, "https": proxy_full}
+            logger.info(
+                "Outbound requests will use proxy %s",
+                _redact_proxy_url(proxy_full),
+            )
 
     # ------------------------------------------------------------------
     # Authentication
@@ -329,3 +351,53 @@ class WithSecureClient:
             "Fetched %d detections for incident %s", len(detections), incident_id
         )
         return detections
+
+
+# ----------------------------------------------------------------------
+# Proxy helpers
+# ----------------------------------------------------------------------
+
+
+def _build_proxy_url(
+    url: Optional[str],
+    username: Optional[str],
+    password: Optional[str],
+) -> Optional[str]:
+    """Combine a proxy URL with optional credentials, URL-encoding them.
+
+    Returns None if `url` is empty/whitespace. If `url` is provided without
+    a scheme it is assumed to be http:// . If both `username` and `password`
+    are provided they are injected into the netloc, replacing any credentials
+    already present in `url`.
+    """
+    url = (url or "").strip()
+    if not url:
+        return None
+    if "://" not in url:
+        url = "http://" + url
+
+    parsed = urlparse(url)
+    if not username or not password:
+        return url
+
+    # netloc without any existing credentials
+    host = parsed.hostname or ""
+    if parsed.port:
+        host = f"{host}:{parsed.port}"
+    auth = f"{quote(username, safe='')}:{quote(password, safe='')}"
+    netloc = f"{auth}@{host}"
+    return urlunparse(parsed._replace(netloc=netloc))
+
+
+def _redact_proxy_url(url: str) -> str:
+    """Return the proxy URL with any embedded password replaced by ***."""
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        return url
+    if not parsed.username:
+        return url
+    host = parsed.hostname or ""
+    if parsed.port:
+        host = f"{host}:{parsed.port}"
+    return urlunparse(parsed._replace(netloc=f"{parsed.username}:***@{host}"))

@@ -16,6 +16,20 @@ severity_filter = <string>
 * Leave blank to collect all severities.
 * Optional.
 
+proxy_url = <string>
+* Optional HTTP/HTTPS proxy for outbound requests to the WithSecure API.
+* Example: http://proxy.corp.example:3128
+* Leave blank to connect directly.
+* Optional.
+
+proxy_username = <string>
+* Optional username if the proxy requires authentication.
+* Optional.
+
+proxy_password = <string>
+* Optional password if the proxy requires authentication.
+* Optional.
+
 interval = <integer>
 * Poll interval in seconds. Default: 300.
 
@@ -46,9 +60,22 @@ auto_fetch_detections = <string>
 * BCD incident (sourcetype=withsecure:epp:bcd_detection).
 * Accepted values: true, false. Default: false.
 
+proxy_url = <string>
+* Optional HTTP/HTTPS proxy for outbound requests to the WithSecure API.
+* Example: http://proxy.corp.example:3128
+* Leave blank to connect directly.
+* Optional.
+
+proxy_username = <string>
+* Optional username if the proxy requires authentication.
+* Optional.
+
+proxy_password = <string>
+* Optional password if the proxy requires authentication.
+* Optional.
+
 interval = <integer>
 * Poll interval in seconds. Default: 300.
 
 index = <string>
 * Splunk index to write events to. Default: main.
-

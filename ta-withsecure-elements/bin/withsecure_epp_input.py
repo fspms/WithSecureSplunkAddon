@@ -92,6 +92,41 @@ class EPPInput(smi.Script):
                 required_on_create=False,
             )
         )
+        scheme.add_argument(
+            smi.Argument(
+                "proxy_url",
+                title="Proxy URL",
+                description=(
+                    "Optional HTTP/HTTPS proxy for outbound requests to the "
+                    "WithSecure API. Example: http://proxy.corp.example:3128. "
+                    "Leave blank to connect directly."
+                ),
+                data_type=smi.Argument.data_type_string,
+                required_on_create=False,
+            )
+        )
+        scheme.add_argument(
+            smi.Argument(
+                "proxy_username",
+                title="Proxy Username",
+                description=(
+                    "Optional username if the proxy requires authentication."
+                ),
+                data_type=smi.Argument.data_type_string,
+                required_on_create=False,
+            )
+        )
+        scheme.add_argument(
+            smi.Argument(
+                "proxy_password",
+                title="Proxy Password",
+                description=(
+                    "Optional password if the proxy requires authentication."
+                ),
+                data_type=smi.Argument.data_type_string,
+                required_on_create=False,
+            )
+        )
         return scheme
 
     def validate_input(self, definition: smi.ValidationDefinition) -> None:
@@ -177,7 +212,14 @@ class EPPInput(smi.Script):
             last_ts = _utc_iso(datetime.now(timezone.utc) - timedelta(hours=24))
             logger.info("EPP first run for org %s, starting from %s", org_id, last_ts)
 
-        api = WithSecureClient(client_id, client_secret, org_id)
+        api = WithSecureClient(
+            client_id,
+            client_secret,
+            org_id,
+            proxy_url=input_item.get("proxy_url"),
+            proxy_username=input_item.get("proxy_username"),
+            proxy_password=input_item.get("proxy_password"),
+        )
 
         now_ts = _utc_iso(datetime.now(timezone.utc))
         newest_ts = last_ts

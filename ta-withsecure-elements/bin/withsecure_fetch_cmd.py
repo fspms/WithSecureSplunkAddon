@@ -113,7 +113,12 @@ class FetchDetectionsCommand(GeneratingCommand):
             # 5) Fetch potentially-new detections from the API.
             try:
                 api = WithSecureClient(
-                    creds["client_id"], creds["client_secret"], creds["org_id"]
+                    creds["client_id"],
+                    creds["client_secret"],
+                    creds["org_id"],
+                    proxy_url=creds.get("proxy_url"),
+                    proxy_username=creds.get("proxy_username"),
+                    proxy_password=creds.get("proxy_password"),
                 )
                 new_detections = api.get_incident_detections(
                     self.incident_id,
@@ -302,6 +307,9 @@ class FetchDetectionsCommand(GeneratingCommand):
                     "client_secret": client_secret,
                     "org_id": org_id,
                     "index": conf.get("index", "main"),
+                    "proxy_url": (conf.get("proxy_url") or "").strip() or None,
+                    "proxy_username": (conf.get("proxy_username") or "").strip() or None,
+                    "proxy_password": (conf.get("proxy_password") or "").strip() or None,
                 }
         return None
 
