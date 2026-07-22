@@ -35,14 +35,45 @@ _RETRY_BACKOFF = 2.0
 
 
 def utc_iso(dt: datetime) -> str:
-    """Format a UTC datetime as ISO-8601 with millisecond precision."""
+    """Format a datetime as ISO-8601 UTC with millisecond precision.
+
+    Any timezone-aware datetime is converted to UTC before formatting so
+    the trailing literal 'Z' always reflects the actual instant. A naive
+    datetime is assumed to already be UTC (this add-on never creates one
+    from another timezone).
+    """
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(timezone.utc)
     ms = dt.microsecond // 1000
     return dt.strftime(f"%Y-%m-%dT%H:%M:%S.{ms:03d}Z")
 
 
+def parse_iso_utc(ts: str) -> datetime:
+    """Parse an ISO-8601 timestamp and return a timezone-aware UTC datetime.
+
+    The WithSecure Elements API returns timestamps in both forms:
+      '2026-07-22T11:19:08.804Z'   (with milliseconds/microseconds)
+      '2026-07-22T11:19:08Z'       (whole seconds only)
+    A strptime with a hard-coded '.%f' would raise ValueError on the
+    second form. Using fromisoformat with 'Z' rewritten as '+00:00'
+    handles both natively on Python 3.9+.
+
+    A non-UTC offset (e.g. '+02:00') is converted to UTC. A missing
+    offset is assumed to be UTC per the WithSecure API contract. The
+    result is always tz-aware and normalised to UTC so downstream
+    formatting and arithmetic is unambiguous.
+    """
+    dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    else:
+        dt = dt.astimezone(timezone.utc)
+    return dt
+
+
 def advance_ts(ts: str) -> str:
     """Return ts + 1 ms (used to make checkpoint comparisons exclusive)."""
-    dt = datetime.strptime(ts, "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=timezone.utc)
+    dt = parse_iso_utc(ts)
     return utc_iso(dt + timedelta(milliseconds=1))
 
 

@@ -18,12 +18,20 @@ field checked on acquire — see ``LOCK_TTL_SECONDS`` below.
 
 import json
 import logging
+import os
+import sys
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from urllib.parse import quote
 
+_bin = os.path.dirname(os.path.abspath(__file__))
+if _bin not in sys.path:
+    sys.path.insert(0, _bin)
+
 import splunk.rest as rest  # type: ignore[import-not-found]
+
+from withsecure_api import parse_iso_utc
 
 logger = logging.getLogger("ta-withsecure-elements")
 
@@ -50,10 +58,16 @@ def _utc_now_iso() -> str:
 
 
 def _parse_iso(ts: str) -> Optional[datetime]:
+    """Parse an ISO-8601 UTC timestamp, tolerating optional milliseconds.
+
+    Uses the same helper as withsecure_api so a lock's `expires_at`
+    written without milliseconds (or by any future revision that changes
+    the format) is still parseable.
+    """
+    if not ts:
+        return None
     try:
-        return datetime.strptime(ts, "%Y-%m-%dT%H:%M:%S.%fZ").replace(
-            tzinfo=timezone.utc
-        )
+        return parse_iso_utc(ts)
     except (ValueError, TypeError):
         return None
 
