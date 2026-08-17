@@ -5,7 +5,7 @@
     "id": {
       "group": null,
       "name": "ta-withsecure-elements",
-      "version": "1.0.7"
+      "version": "1.1.0"
     },
     "author": [
       {
@@ -15,7 +15,7 @@
       }
     ],
     "releaseDate": "2026-08-17",
-    "description": "Collects EPP Security Events and Broad Context Detection (BCD) incidents and detections from the WithSecure Elements API.",
+    "description": "Collects EPP Security Events and Broad Context Detection (BCD) incidents and detections from the WithSecure Elements API. Requires Splunk Enterprise 10.2 or later (Python 3.13 modular inputs).",
     "classification": {
       "intendedAudience": "IT Security",
       "categories": ["Security, Fraud & Compliance"],

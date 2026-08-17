@@ -4,8 +4,29 @@ A Technology Add-on (TA) for use with Splunk® Enterprise that ingests security 
 
 [![Splunkbase](https://img.shields.io/badge/Splunkbase-Install-65A637.svg)](https://splunkbase.splunk.com/app/8820)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Splunk](https://img.shields.io/badge/Splunk-%3E%3D9.0-green.svg)](https://www.splunk.com)
-[![Python](https://img.shields.io/badge/Python-3.9%2B-blue.svg)](https://www.python.org)
+[![Splunk](https://img.shields.io/badge/Splunk-%3E%3D10.2-green.svg)](https://www.splunk.com)
+[![Python](https://img.shields.io/badge/Python-3.13%2B-blue.svg)](https://www.python.org)
+
+---
+
+## Release lines
+
+This add-on ships in two parallel release lines. Pick the one matching your Splunk platform:
+
+| Line | Compatible Splunk versions | Python | Status | Where to get it |
+|---|---|---|---|---|
+| **`1.1.x`** (main) | **Splunk Enterprise / Cloud 10.2+** | 3.13 | ✅ Active — new features and fixes land here first | [Releases](https://github.com/fspms/WithSecureSplunkAddon/releases) on `main` branch |
+| **`1.0.x`** (maintenance) | Splunk Enterprise 9.0 → 10.1 | 3.9 | 🛠 Maintenance-only — critical bug fixes backported | [Releases](https://github.com/fspms/WithSecureSplunkAddon/releases) tagged `v1.0.*`, code on the [`v1.0.x`](https://github.com/fspms/WithSecureSplunkAddon/tree/v1.0.x) branch |
+
+**Why two lines?** Splunk deprecated Python 3.9 in Splunk Enterprise 10.2, and Splunk Cloud will drop compatibility with add-ons declaring `python.required = 3.9` in the near future. To keep serving both audiences without abandoning the large installed base of Splunk 9.x, the code is preserved on the `v1.0.x` branch and new development continues on `main` with Python 3.13.
+
+**Which one should I install?**
+
+- Splunk Enterprise 9.x, 10.0, 10.1 → **use `1.0.x`**
+- Splunk Enterprise / Cloud **10.2 or later** → **use `1.1.x`**
+- Fresh install with a modern Splunk deployment → **use `1.1.x`**
+
+Both lines produce identical events (same sourcetypes, same field extractions, same CIM mappings). Upgrading from `1.0.x` to `1.1.x` is a straightforward in-place upgrade once your Splunk instance is on 10.2 or later — KV Store checkpoints, input configuration, and existing indexed events are preserved.
 
 ---
 
@@ -27,8 +48,8 @@ A Technology Add-on (TA) for use with Splunk® Enterprise that ingests security 
 
 | Component | Version |
 |---|---|
-| Splunk Enterprise | ≥ 9.0 |
-| Python | 3.9+ (bundled with Splunk) |
+| Splunk Enterprise / Cloud | ≥ 10.2 (for the 1.0.x line: 9.0 – 10.1) |
+| Python | 3.13 (bundled with Splunk 10.2+); the 1.0.x line uses 3.9 |
 | Splunk KV Store | Enabled (used for checkpoints and per-incident locks) |
 | WithSecure Elements | API access with OAuth2 credentials (`connect.api.read` scope) |
 
